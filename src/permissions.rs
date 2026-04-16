@@ -19,6 +19,9 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 /// Otherwise falls back to reading the macOS notification preferences
 /// plist. Returns `false` when permissions cannot be verified, so the
 /// caller can fall back to another delivery method (e.g. osascript).
+///
+/// When the plist indicates notifications are explicitly disabled, a
+/// one-time dialog is shown asking the user to open Notification Settings.
 pub fn ensure_authorized(bundle_id: &str) -> bool {
     // UNUserNotificationCenter requires a valid .app bundle context.
     // Standalone CLI binaries crash with an unrecoverable ObjC exception
@@ -32,11 +35,21 @@ pub fn ensure_authorized(bundle_id: &str) -> bool {
 
     // Fallback: read the macOS notification preferences plist.
     if let Some(enabled) = check_plist_permission(bundle_id) {
+        if !enabled && !was_already_prompted(bundle_id) {
+            prompt_enable_notifications(bundle_id);
+            // Re-check in case the user toggled the setting quickly.
+            if let Some(true) = check_plist_permission(bundle_id) {
+                return true;
+            }
+        }
         return enabled;
     }
 
-    // Cannot determine — skip native so the caller falls back to osascript.
-    false
+    // App not listed in the plist. This means the user has never changed
+    // its notification settings — macOS defaults are typically "allowed".
+    // Optimistically return true so we use the real bundle ID rather than
+    // falling back to a synthetic one that macOS will silently drop.
+    true
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +109,69 @@ fn request_un_authorization(center: &UNUserNotificationCenter) -> Option<bool> {
     center.requestAuthorizationWithOptions_completionHandler(options, &handler);
 
     rx.recv_timeout(TIMEOUT).ok()
+}
+
+// ---------------------------------------------------------------------------
+// One-time permission prompt
+// ---------------------------------------------------------------------------
+
+/// Directory where we store per-bundle-id marker files to avoid repeated
+/// prompts.
+fn prompted_marker_dir() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|h| h.join(".notclaude").join("prompted"))
+}
+
+fn prompted_marker_path(bundle_id: &str) -> Option<std::path::PathBuf> {
+    let safe_id = bundle_id.replace('/', "_");
+    prompted_marker_dir().map(|d| d.join(safe_id))
+}
+
+fn was_already_prompted(bundle_id: &str) -> bool {
+    prompted_marker_path(bundle_id)
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
+fn mark_prompted(bundle_id: &str) {
+    if let Some(path) = prompted_marker_path(bundle_id) {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, "");
+    }
+}
+
+/// Display an osascript dialog telling the user that notifications are
+/// disabled for `bundle_id` and offering to open System Settings.
+fn prompt_enable_notifications(bundle_id: &str) {
+    mark_prompted(bundle_id);
+
+    let script = format!(
+        concat!(
+            "display dialog ",
+            "\"Notifications are disabled for {bid}.\\n\\n",
+            "Would you like to open Notification Settings to enable them?\" ",
+            "buttons {{\"Not Now\", \"Open Settings\"}} ",
+            "default button \"Open Settings\" ",
+            "with title \"notclaude\" ",
+            "with icon caution"
+        ),
+        bid = bundle_id
+    );
+
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output();
+
+    if let Ok(out) = output {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        if stdout.contains("Open Settings") {
+            let _ = std::process::Command::new("open")
+                .arg("x-apple.systempreferences:com.apple.Notifications-Settings")
+                .status();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -169,5 +245,32 @@ mod tests {
             let _ = enabled;
         }
         // If the plist can't be read (CI sandbox), None is fine too.
+    }
+
+    // -- marker file helpers --------------------------------------------------
+
+    #[test]
+    fn marker_round_trip() {
+        let bid = "com.test.marker-round-trip";
+        // Clean up from any prior run.
+        if let Some(p) = prompted_marker_path(bid) {
+            let _ = std::fs::remove_file(&p);
+        }
+
+        assert!(!was_already_prompted(bid));
+        mark_prompted(bid);
+        assert!(was_already_prompted(bid));
+
+        // Clean up.
+        if let Some(p) = prompted_marker_path(bid) {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    #[test]
+    fn marker_path_sanitises_slashes() {
+        let path = prompted_marker_path("com/example/app").unwrap();
+        let name = path.file_name().unwrap().to_str().unwrap();
+        assert!(!name.contains('/'));
     }
 }

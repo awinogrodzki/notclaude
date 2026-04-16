@@ -63,11 +63,29 @@ pub fn read_bundle_id(app_bundle_path: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
-/// Walk up the process tree from the current process and return the
-/// bundle identifier of the first ancestor that lives inside a `.app`
-/// bundle. This identifies the terminal emulator or IDE that hosts
-/// the shell session.
+/// Return the bundle identifier of the terminal/IDE hosting this session.
+///
+/// Primary method: read the `__CFBundleIdentifier` environment variable
+/// that macOS sets for processes launched from a `.app` bundle (inherited
+/// by all children).
+///
+/// Fallback: walk the process tree via `proc_pidinfo`.  This can fail on
+/// macOS 15+ when a privileged process (e.g. `login`) sits between the
+/// shell and the terminal app, because `proc_pidinfo` requires entitlements
+/// to inspect processes owned by other users.
 pub fn find_parent_app_bundle_id() -> Option<String> {
+    // Fast path: env var set by LaunchServices, inherited by children.
+    if let Ok(bundle_id) = std::env::var("__CFBundleIdentifier") {
+        if !bundle_id.is_empty() {
+            return Some(bundle_id);
+        }
+    }
+
+    // Fallback: walk the process tree.
+    find_parent_app_bundle_id_via_proctree()
+}
+
+fn find_parent_app_bundle_id_via_proctree() -> Option<String> {
     let mut pid = std::process::id() as i32;
 
     // Walk up at most 20 levels to avoid infinite loops

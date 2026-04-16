@@ -35,6 +35,16 @@ enum Commands {
     },
     /// Show current installation status
     Status,
+    /// Internal: send notification and activate app on click (spawned by hook)
+    #[command(hide = true)]
+    Activate {
+        #[arg(long)]
+        title: String,
+        #[arg(long)]
+        message: String,
+        #[arg(long)]
+        bundle_id: String,
+    },
 }
 
 fn main() {
@@ -45,6 +55,11 @@ fn main() {
         Commands::Install { global, project } => run_install(global, project),
         Commands::Uninstall { global, project } => run_uninstall(global, project),
         Commands::Status => run_status(),
+        Commands::Activate {
+            title,
+            message,
+            bundle_id,
+        } => run_activate(&title, &message, &bundle_id),
     }
 }
 
@@ -56,33 +71,73 @@ fn run_hook() {
     if let Some((title, message)) = notification::handle_hook(&input) {
         let bundle_id = process::find_parent_app_bundle_id();
 
-        // When we have a focusable app, fork so the parent returns
-        // immediately to Claude Code while the child waits for the
-        // notification click and then activates the target app
-        // (switching macOS Spaces).
-        let wait_and_activate = bundle_id.is_some() && daemonize();
-
-        notification::send_notification(title, message, bundle_id.as_deref(), wait_and_activate);
+        if let Some(bid) = &bundle_id {
+            // Spawn a detached child process to send the notification
+            // and wait for a click.  We use `exec` (via Command::new)
+            // instead of `fork` because the ObjC runtime — specifically
+            // NSUserNotificationCenter's delegate callbacks — is not
+            // fork-safe and silently breaks in a forked child.
+            spawn_activate(title, message, bid);
+        } else {
+            notification::send_notification(title, message, None, false);
+        }
     }
 }
 
-/// Fork and detach from the parent session. Returns `true` in the
-/// child (daemon), `false` if fork fails. The parent exits immediately.
-fn daemonize() -> bool {
-    unsafe {
-        match libc::fork() {
-            -1 => false, // fork failed — continue in-process
-            0 => {
-                // Child: new session so we're independent of the caller
-                libc::setsid();
-                // Safety net: kill the daemon after 5 minutes so a
-                // notification that is never clicked doesn't leak a process.
-                libc::alarm(300);
-                true
-            }
-            _ => std::process::exit(0), // parent exits
+/// Spawn a detached `notclaude activate` process.  The current process
+/// returns immediately so Claude Code's hook isn't blocked.
+fn spawn_activate(title: &str, message: &str, bundle_id: &str) {
+    use std::os::unix::process::CommandExt;
+
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => {
+            // Can't find our own binary — fall back to inline send.
+            notification::send_notification(title, message, Some(bundle_id), false);
+            return;
         }
+    };
+
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args([
+        "activate",
+        "--title",
+        title,
+        "--message",
+        message,
+        "--bundle-id",
+        bundle_id,
+    ]);
+
+    // Detach all IO so the child doesn't hold the hook's pipes open.
+    cmd.stdin(std::process::Stdio::null());
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+
+    // Create a new session so the child survives after the hook exits.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
     }
+
+    if cmd.spawn().is_err() {
+        // Spawn failed — fall back to inline (non-activating) send.
+        notification::send_notification(title, message, Some(bundle_id), false);
+    }
+}
+
+/// Send notification and activate the target app on click.
+/// Runs as a standalone process spawned by the hook.
+fn run_activate(title: &str, message: &str, bundle_id: &str) {
+    // Safety net: kill after 5 minutes so a notification that is
+    // never clicked doesn't leak a process.
+    unsafe {
+        libc::alarm(300);
+    }
+
+    notification::send_notification(title, message, Some(bundle_id), true);
 }
 
 fn run_install(global: bool, project: bool) {

@@ -72,21 +72,22 @@ fn send_and_activate(title: &str, message: &str, bundle_id: &str) -> bool {
         .send();
 
     match result {
-        Ok(NotificationResponse::Click) => {
+        Ok(NotificationResponse::None) => true,
+        Ok(_) => {
             activate_app(bundle_id);
             true
         }
-        Ok(_) => true,
         Err(_) => false,
     }
 }
 
 /// Activate an application by its bundle identifier.
-/// `open -b` brings the app to the foreground and switches Spaces.
+/// Uses AppleScript which reliably switches macOS Spaces.
 fn activate_app(bundle_id: &str) {
-    let _ = std::process::Command::new("open")
-        .arg("-b")
-        .arg(bundle_id)
+    let script = format!("tell application id \"{}\" to activate", bundle_id);
+    let _ = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
         .status();
 }
 
