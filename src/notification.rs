@@ -1,6 +1,5 @@
 use serde::Deserialize;
 use std::io::{self, Read};
-use std::process::Command;
 
 #[derive(Debug, Deserialize)]
 pub struct HookInput {
@@ -14,52 +13,41 @@ pub fn read_hook_input() -> Option<HookInput> {
     serde_json::from_str(&buf).ok()
 }
 
-/// Send a macOS notification. When `bundle_id` is provided, the notification
-/// is attributed to that application so that clicking it causes macOS to
-/// activate (focus) the app — even if it's minimised or on another desktop.
+/// Bundle ID used when we cannot attribute the notification to a real app.
+/// Clicking the notification does nothing because no installed app matches.
+const UNFOCUSABLE_BUNDLE_ID: &str = "com.notclaude.notification";
+
+/// Send a macOS notification.
 ///
-/// Falls back to plain `osascript` when the native path is unavailable.
+/// When `bundle_id` is provided *and* the target app has notification
+/// permissions, the notification is attributed to that app so clicking
+/// it focuses the window. Otherwise a synthetic bundle ID is used —
+/// clicking the notification does nothing.
 pub fn send_notification(title: &str, message: &str, bundle_id: Option<&str>) -> bool {
+    // If the parent app has notification permissions, attribute the
+    // notification to it so clicking focuses that app.
     if let Some(bid) = bundle_id {
-        if send_native(title, message, bid) {
-            return true;
+        if crate::permissions::ensure_authorized(bid) {
+            let _ = mac_notification_sys::set_application(bid);
+            if send_mac_notification(title, message) {
+                return true;
+            }
         }
     }
-    send_osascript(title, message)
+
+    // No focusable source. Use a synthetic bundle ID — clicking the
+    // notification does nothing because no installed app matches it.
+    let _ = mac_notification_sys::set_application(UNFOCUSABLE_BUNDLE_ID);
+    send_mac_notification(title, message)
 }
 
-/// Send via `mac-notification-sys` which swizzles `NSBundle.bundleIdentifier`
-/// so macOS attributes the notification to the target app.
-fn send_native(title: &str, message: &str, bundle_id: &str) -> bool {
-    // set_application is internally call_once — safe to call repeatedly but
-    // only the first invocation takes effect.
-    if mac_notification_sys::set_application(bundle_id).is_err() {
-        return false;
-    }
-
+fn send_mac_notification(title: &str, message: &str) -> bool {
     mac_notification_sys::Notification::new()
         .title(title)
         .message(message)
         .sound("Ping")
         .send()
         .is_ok()
-}
-
-/// Fallback: fire-and-forget via osascript (no click-to-focus).
-fn send_osascript(title: &str, message: &str) -> bool {
-    let escaped_title = title.replace('\\', "\\\\").replace('"', "\\\"");
-    let escaped_message = message.replace('\\', "\\\\").replace('"', "\\\"");
-
-    let script = format!(
-        "display notification \"{}\" with title \"{}\" sound name \"Ping\"",
-        escaped_message, escaped_title
-    );
-
-    Command::new("osascript")
-        .arg("-e")
-        .arg(&script)
-        .output()
-        .is_ok_and(|o| o.status.success())
 }
 
 pub fn handle_hook(input: &HookInput) -> Option<(&str, &str)> {
@@ -194,8 +182,8 @@ mod tests {
     // -- send_notification -------------------------------------------------
 
     #[test]
-    fn send_notification_osascript_fallback() {
-        // With bundle_id = None, falls back to osascript
+    fn send_notification_unfocusable_fallback() {
+        // With bundle_id = None, sends with synthetic bundle ID.
         if cfg!(target_os = "macos") {
             let result = send_notification("Test", "Hello from notclaude tests", None);
             assert!(result);
@@ -203,9 +191,10 @@ mod tests {
     }
 
     #[test]
-    fn send_osascript_directly() {
+    fn send_mac_notification_directly() {
         if cfg!(target_os = "macos") {
-            assert!(send_osascript("Test", "osascript fallback test"));
+            let _ = mac_notification_sys::set_application(UNFOCUSABLE_BUNDLE_ID);
+            assert!(send_mac_notification("Test", "unfocusable notification test"));
         }
     }
 }
