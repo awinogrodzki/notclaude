@@ -1,4 +1,4 @@
-name: Version & Release
+name: Version
 
 on:
   push:
@@ -11,10 +11,6 @@ permissions:
 jobs:
   version:
     runs-on: ubuntu-latest
-    outputs:
-      skip: ${{ steps.bump.outputs.skip }}
-      tag: ${{ steps.version.outputs.tag }}
-      new: ${{ steps.version.outputs.new }}
 
     steps:
       - uses: actions/checkout@v4
@@ -121,57 +117,3 @@ jobs:
           git commit -m "chore: bump version to ${{ steps.version.outputs.new }}"
           git tag "${{ steps.version.outputs.tag }}"
           git push origin main --tags
-
-  build:
-    needs: version
-    if: needs.version.outputs.skip != 'true'
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        target:
-          - aarch64-apple-darwin
-          - x86_64-apple-darwin
-        include:
-          - target: aarch64-apple-darwin
-            arch: arm64
-          - target: x86_64-apple-darwin
-            arch: x86_64
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.version.outputs.tag }}
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Package binary
-        run: cp target/${{ matrix.target }}/release/notclaude notclaude-darwin-${{ matrix.arch }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: notclaude-darwin-${{ matrix.arch }}
-          path: notclaude-darwin-${{ matrix.arch }}
-
-  release:
-    needs: [version, build]
-    if: needs.version.outputs.skip != 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.version.outputs.tag }}
-          files: |
-            notclaude-darwin-arm64/notclaude-darwin-arm64
-            notclaude-darwin-x86_64/notclaude-darwin-x86_64
-          generate_release_notes: true
