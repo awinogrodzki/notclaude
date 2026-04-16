@@ -1,0 +1,13 @@
+{
+  "name": "notclaude",
+  "owner": {
+    "name": "awinogrodzki"
+  },
+  "plugins": [
+    {
+      "name": "notclaude",
+      "source": "./",
+      "description": "macOS desktop notifications for Claude Code hooks"
+    }
+  ]
+}

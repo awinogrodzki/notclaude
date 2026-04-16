@@ -15,15 +15,49 @@ Inspired by [this post](https://alexop.dev/posts/claude-code-notification-hooks/
 
 ## Install
 
+### As a Claude Code plugin (recommended)
+
+Install the plugin in any project — no Rust toolchain required if pre-built binaries are available:
+
+```sh
+# In Claude Code, run:
+/plugin marketplace add awinogrodzki/notclaude
+/plugin install notclaude@notclaude
+```
+
+Then use the `/notclaude:setup` skill to install notifications for the current project. The setup will automatically download a pre-built binary or build from source as a fallback.
+
+### Via install script
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/awinogrodzki/notclaude/main/scripts/install.sh | bash
+```
+
+### From source
+
 Requires [Rust toolchain](https://rustup.rs/).
+
+```sh
+cargo install --git https://github.com/awinogrodzki/notclaude
+```
+
+Or clone and build locally:
 
 ```sh
 cargo install --path .
 ```
 
-This installs the `notclaude` binary to `~/.cargo/bin/`.
-
 ## Usage
+
+### Plugin skills
+
+When installed as a Claude Code plugin, the following skills are available:
+
+| Skill | Description |
+|-------|-------------|
+| `/notclaude:setup` | Install notclaude and configure hooks for the current project |
+| `/notclaude:teardown` | Remove notification hooks from the current project |
+| `/notclaude:notification-status` | Check installation status |
 
 ### Configure the hook
 

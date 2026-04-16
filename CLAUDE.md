@@ -26,6 +26,20 @@ Single binary, three modules:
 - `uninstall` cleans up empty `hooks` objects to avoid leaving noise in settings
 - All JSON manipulation preserves unknown fields (forward-compatible)
 
+## Plugin
+
+This repo doubles as a Claude Code plugin. The plugin structure:
+
+- `.claude-plugin/plugin.json` — Plugin manifest (name, version, author, repo)
+- `.claude-plugin/marketplace.json` — Marketplace registration
+- `skills/setup/SKILL.md` — `/notclaude:setup` skill: installs binary + configures project hooks
+- `skills/teardown/SKILL.md` — `/notclaude:teardown` skill: removes project hooks
+- `skills/notification-status/SKILL.md` — `/notclaude:notification-status` skill: shows hook status
+- `scripts/install.sh` — Standalone install script (curl-pipeable)
+- `.github/workflows/release.yml` — Builds macOS arm64/x86_64 binaries on tag push
+
+Binary distribution strategy: pre-built GitHub Release binaries (no Rust needed), with `cargo install` fallback.
+
 ## Testing
 
 Tests live alongside their modules (`#[cfg(test)]`). Config tests use `tempfile` crate for isolated filesystem operations. Notification parsing and routing are tested exhaustively; `send_notification` has one integration test that actually fires `osascript` on macOS.

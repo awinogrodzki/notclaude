@@ -1,0 +1,10 @@
+{
+  "name": "notclaude",
+  "version": "0.1.0",
+  "description": "macOS desktop notifications for Claude Code hooks — get notified when Claude needs your attention",
+  "author": {
+    "name": "Amadeusz Winogrodzki"
+  },
+  "repository": "https://github.com/awinogrodzki/notclaude",
+  "license": "MIT"
+}
