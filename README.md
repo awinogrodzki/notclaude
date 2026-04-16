@@ -57,7 +57,7 @@ When installed as a Claude Code plugin, the following skills are available:
 |-------|-------------|
 | `/notclaude:setup` | Install notclaude and configure hooks for the current project |
 | `/notclaude:teardown` | Remove notification hooks from the current project |
-| `/notclaude:notification-status` | Check installation status |
+| `/notclaude:status` | Check installation status |
 
 ### Configure the hook
 
@@ -139,6 +139,39 @@ cargo test        # run all tests
 cargo build       # debug build
 cargo run -- status  # run locally without installing
 ```
+
+### Git hooks setup
+
+This project uses a `commit-msg` hook to enforce [Conventional Commits](https://www.conventionalcommits.org/). Set it up after cloning:
+
+```sh
+git config core.hooksPath scripts
+```
+
+Commit messages must follow the format:
+
+```
+<type>[(<scope>)][!]: <description>
+```
+
+Allowed types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `style`, `perf`
+
+Append `!` for breaking changes.
+
+Examples:
+
+```
+feat: add global notification sound setting
+fix(config): handle missing settings.json
+feat!: redesign hook protocol
+docs: update installation instructions
+```
+
+When a commit lands on `main`, a GitHub Actions workflow automatically:
+1. Determines the semver bump from the commit type (`feat` → minor, `fix`/others → patch, `!` → major)
+2. Updates the version in `Cargo.toml`
+3. Adds an entry to `CHANGELOG.md`
+4. Creates a git tag (`v*`), which triggers the release build
 
 ## License
 

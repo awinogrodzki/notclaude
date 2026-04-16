@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+#
+# commit-msg hook — validates that the commit message follows Conventional Commits.
+#
+# Format:  <type>[optional scope]: <description>
+#
+# Allowed types and their semver impact:
+#   feat     → minor version bump
+#   fix      → patch version bump
+#   docs     → patch version bump
+#   chore    → patch version bump
+#   refactor → patch version bump
+#   test     → patch version bump
+#   ci       → patch version bump
+#   style    → patch version bump
+#   perf     → patch version bump
+#
+# Append "!" after the type/scope for BREAKING CHANGE → major version bump:
+#   feat!: remove legacy API
+#   fix(config)!: change default format
+#
+# Lines starting with '#' are ignored (git default).
+
+set -euo pipefail
+
+commit_msg_file="$1"
+
+# Strip comment lines and blank lines to get the effective message
+msg=$(sed '/^#/d' "$commit_msg_file" | head -1)
+
+if [ -z "$msg" ]; then
+  echo "ERROR: Empty commit message."
+  exit 1
+fi
+
+# Conventional Commits pattern:
+#   type[!][(scope)][!]: description
+pattern='^(feat|fix|docs|chore|refactor|test|ci|style|perf)(\(.+\))?!?: .+'
+
+if ! echo "$msg" | grep -qE "$pattern"; then
+  echo ""
+  echo "ERROR: Commit message does not follow Conventional Commits format."
+  echo ""
+  echo "Expected: <type>[(<scope>)][!]: <description>"
+  echo ""
+  echo "Allowed types: feat, fix, docs, chore, refactor, test, ci, style, perf"
+  echo ""
+  echo "Examples:"
+  echo "  feat: add global notification sound setting"
+  echo "  fix(config): handle missing settings.json"
+  echo "  feat!: redesign hook protocol (BREAKING CHANGE)"
+  echo "  docs: update installation instructions"
+  echo ""
+  exit 1
+fi

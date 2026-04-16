@@ -1,0 +1,120 @@
+name: Version
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get commit message
+        id: commit
+        run: echo "message=$(git log -1 --pretty=%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          MSG="${{ steps.commit.outputs.message }}"
+
+          # Skip if this is a version bump commit (avoid infinite loop)
+          if echo "$MSG" | grep -qE '^chore: bump version to '; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Breaking change — major
+          if echo "$MSG" | grep -qE '^(feat|fix|docs|chore|refactor|test|ci|style|perf)(\(.+\))?!:'; then
+            echo "level=major" >> "$GITHUB_OUTPUT"
+          # feat — minor
+          elif echo "$MSG" | grep -qE '^feat(\(.+\))?: '; then
+            echo "level=minor" >> "$GITHUB_OUTPUT"
+          # everything else — patch
+          elif echo "$MSG" | grep -qE '^(fix|docs|chore|refactor|test|ci|style|perf)(\(.+\))?: '; then
+            echo "level=patch" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version
+        if: steps.bump.outputs.skip != 'true'
+        id: version
+        run: |
+          CURRENT=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          LEVEL="${{ steps.bump.outputs.level }}"
+          case "$LEVEL" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW="${MAJOR}.${MINOR}.${PATCH}"
+          echo "old=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          echo "tag=v${NEW}" >> "$GITHUB_OUTPUT"
+
+          echo "Bumping $CURRENT → $NEW ($LEVEL)"
+
+      - name: Update Cargo.toml
+        if: steps.bump.outputs.skip != 'true'
+        run: |
+          sed -i "s/^version = \"${{ steps.version.outputs.old }}\"/version = \"${{ steps.version.outputs.new }}\"/" Cargo.toml
+
+      - name: Update Cargo.lock
+        if: steps.bump.outputs.skip != 'true'
+        run: |
+          if [ -f Cargo.lock ]; then
+            # Install Rust to regenerate the lockfile
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+            source "$HOME/.cargo/env"
+            cargo update -p notclaude
+          fi
+
+      - name: Update CHANGELOG.md
+        if: steps.bump.outputs.skip != 'true'
+        run: |
+          MSG="${{ steps.commit.outputs.message }}"
+          VERSION="${{ steps.version.outputs.new }}"
+          DATE=$(date -u +%Y-%m-%d)
+          ENTRY=$(printf '## [%s] - %s\n\n- %s' "$VERSION" "$DATE" "$MSG")
+          if [ -f CHANGELOG.md ]; then
+            HEADER=$(head -1 CHANGELOG.md)
+            REST=$(tail -n +2 CHANGELOG.md)
+            printf '%s\n\n%s\n%s\n' "$HEADER" "$ENTRY" "$REST" > CHANGELOG.md
+          else
+            printf '# Changelog\n\n%s\n' "$ENTRY" > CHANGELOG.md
+          fi
+
+      - name: Commit and tag
+        if: steps.bump.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock CHANGELOG.md
+          git commit -m "chore: bump version to ${{ steps.version.outputs.new }}"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin main --tags
