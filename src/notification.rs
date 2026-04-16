@@ -14,7 +14,39 @@ pub fn read_hook_input() -> Option<HookInput> {
     serde_json::from_str(&buf).ok()
 }
 
-pub fn send_notification(title: &str, message: &str) -> bool {
+/// Send a macOS notification. When `bundle_id` is provided, the notification
+/// is attributed to that application so that clicking it causes macOS to
+/// activate (focus) the app — even if it's minimised or on another desktop.
+///
+/// Falls back to plain `osascript` when the native path is unavailable.
+pub fn send_notification(title: &str, message: &str, bundle_id: Option<&str>) -> bool {
+    if let Some(bid) = bundle_id {
+        if send_native(title, message, bid) {
+            return true;
+        }
+    }
+    send_osascript(title, message)
+}
+
+/// Send via `mac-notification-sys` which swizzles `NSBundle.bundleIdentifier`
+/// so macOS attributes the notification to the target app.
+fn send_native(title: &str, message: &str, bundle_id: &str) -> bool {
+    // set_application is internally call_once — safe to call repeatedly but
+    // only the first invocation takes effect.
+    if mac_notification_sys::set_application(bundle_id).is_err() {
+        return false;
+    }
+
+    mac_notification_sys::Notification::new()
+        .title(title)
+        .message(message)
+        .sound("Ping")
+        .send()
+        .is_ok()
+}
+
+/// Fallback: fire-and-forget via osascript (no click-to-focus).
+fn send_osascript(title: &str, message: &str) -> bool {
     let escaped_title = title.replace('\\', "\\\\").replace('"', "\\\"");
     let escaped_message = message.replace('\\', "\\\\").replace('"', "\\\"");
 
@@ -55,6 +87,8 @@ pub fn handle_hook(input: &HookInput) -> Option<(&str, &str)> {
 mod tests {
     use super::*;
 
+    // -- JSON parsing ------------------------------------------------------
+
     #[test]
     fn parse_permission_prompt() {
         let json = r#"{"notification_type": "permission_prompt", "message": "Allow file write?"}"#;
@@ -92,6 +126,8 @@ mod tests {
         let result: Result<HookInput, _> = serde_json::from_str("not json");
         assert!(result.is_err());
     }
+
+    // -- handle_hook routing -----------------------------------------------
 
     #[test]
     fn handle_permission_prompt_with_message() {
@@ -155,13 +191,21 @@ mod tests {
         assert!(handle_hook(&input).is_none());
     }
 
+    // -- send_notification -------------------------------------------------
+
     #[test]
-    fn send_notification_runs_osascript() {
-        // Integration test: only validates osascript can be invoked on macOS
-        let result = send_notification("Test", "Hello from notclaude tests");
-        // On macOS CI/local this should succeed; skip assertion on non-mac
+    fn send_notification_osascript_fallback() {
+        // With bundle_id = None, falls back to osascript
         if cfg!(target_os = "macos") {
+            let result = send_notification("Test", "Hello from notclaude tests", None);
             assert!(result);
+        }
+    }
+
+    #[test]
+    fn send_osascript_directly() {
+        if cfg!(target_os = "macos") {
+            assert!(send_osascript("Test", "osascript fallback test"));
         }
     }
 }

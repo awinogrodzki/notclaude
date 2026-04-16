@@ -1,9 +1,8 @@
-use std::process;
-
 use clap::{Parser, Subcommand};
 
 use notclaude::config;
 use notclaude::notification;
+use notclaude::process;
 
 #[derive(Parser)]
 #[command(name = "notclaude", version, about = "macOS desktop notifications for Claude Code hooks")]
@@ -51,24 +50,25 @@ fn main() {
 
 fn run_hook() {
     let Some(input) = notification::read_hook_input() else {
-        process::exit(0);
+        std::process::exit(0);
     };
 
     if let Some((title, message)) = notification::handle_hook(&input) {
-        notification::send_notification(title, message);
+        let bundle_id = process::find_parent_app_bundle_id();
+        notification::send_notification(title, message, bundle_id.as_deref());
     }
 }
 
 fn run_install(global: bool, project: bool) {
     if !global && !project {
         eprintln!("Error: specify --global or --project");
-        process::exit(1);
+        std::process::exit(1);
     }
 
     let path = if global {
         config::global_settings_path().unwrap_or_else(|| {
             eprintln!("Error: could not determine home directory");
-            process::exit(1);
+            std::process::exit(1);
         })
     } else {
         config::project_settings_path()
@@ -81,7 +81,7 @@ fn run_install(global: bool, project: bool) {
         }
         Err(e) => {
             eprintln!("Error: {e}");
-            process::exit(1);
+            std::process::exit(1);
         }
     }
 }
@@ -89,13 +89,13 @@ fn run_install(global: bool, project: bool) {
 fn run_uninstall(global: bool, project: bool) {
     if !global && !project {
         eprintln!("Error: specify --global or --project");
-        process::exit(1);
+        std::process::exit(1);
     }
 
     let path = if global {
         config::global_settings_path().unwrap_or_else(|| {
             eprintln!("Error: could not determine home directory");
-            process::exit(1);
+            std::process::exit(1);
         })
     } else {
         config::project_settings_path()
@@ -108,7 +108,7 @@ fn run_uninstall(global: bool, project: bool) {
         }
         Err(e) => {
             eprintln!("Error: {e}");
-            process::exit(1);
+            std::process::exit(1);
         }
     }
 }
