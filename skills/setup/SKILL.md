@@ -1,4 +1,5 @@
 ---
+name: setup
 description: Install notclaude macOS notifications for this project
 ---
 

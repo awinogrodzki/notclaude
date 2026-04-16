@@ -1,4 +1,5 @@
 ---
+name: status
 description: Check notclaude notification hook status
 ---
 

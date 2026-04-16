@@ -1,4 +1,5 @@
 ---
+name: teardown
 description: Remove notclaude notifications from this project
 ---
 
