@@ -55,5 +55,5 @@ Run: `<NOTCLAUDE_BIN> status`
 Report the result. On success, tell the user:
 - They will now receive macOS notifications when Claude Code needs permission or is idle
 - Clicking a notification will focus the terminal/IDE window
-- They can check status anytime with `notclaude status`
-- To remove: use the `/notclaude:teardown` skill or run `notclaude uninstall --project`
+- They can check status anytime with `/notclaude:status`
+- To remove: use the `/notclaude:teardown` skill
