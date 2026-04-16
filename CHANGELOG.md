@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.6] - 2026-04-16
+
+- fix: switch to correct space
+
 ## [0.2.5] - 2026-04-16
 
 - fix: improve permission handling
