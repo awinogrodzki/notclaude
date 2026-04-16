@@ -1,3 +1,4 @@
+use mac_notification_sys::NotificationResponse;
 use serde::Deserialize;
 use std::io::{self, Read};
 
@@ -20,16 +21,25 @@ const UNFOCUSABLE_BUNDLE_ID: &str = "com.notclaude.notification";
 /// Send a macOS notification.
 ///
 /// When `bundle_id` is provided *and* the target app has notification
-/// permissions, the notification is attributed to that app so clicking
-/// it focuses the window. Otherwise a synthetic bundle ID is used —
-/// clicking the notification does nothing.
-pub fn send_notification(title: &str, message: &str, bundle_id: Option<&str>) -> bool {
-    // If the parent app has notification permissions, attribute the
-    // notification to it so clicking focuses that app.
+/// permissions, the notification is attributed to that app.
+///
+/// When `wait_and_activate` is true the call blocks until the user
+/// clicks the notification, then activates the target app (which
+/// switches macOS Spaces). The caller should fork/daemonize first so
+/// Claude Code's hook returns immediately.
+pub fn send_notification(
+    title: &str,
+    message: &str,
+    bundle_id: Option<&str>,
+    wait_and_activate: bool,
+) -> bool {
     if let Some(bid) = bundle_id {
         if crate::permissions::ensure_authorized(bid) {
             let _ = mac_notification_sys::set_application(bid);
-            if send_mac_notification(title, message) {
+            if wait_and_activate {
+                return send_and_activate(title, message, bid);
+            }
+            if send_fire_and_forget(title, message) {
                 return true;
             }
         }
@@ -38,16 +48,46 @@ pub fn send_notification(title: &str, message: &str, bundle_id: Option<&str>) ->
     // No focusable source. Use a synthetic bundle ID — clicking the
     // notification does nothing because no installed app matches it.
     let _ = mac_notification_sys::set_application(UNFOCUSABLE_BUNDLE_ID);
-    send_mac_notification(title, message)
+    send_fire_and_forget(title, message)
 }
 
-fn send_mac_notification(title: &str, message: &str) -> bool {
+fn send_fire_and_forget(title: &str, message: &str) -> bool {
     mac_notification_sys::Notification::new()
         .title(title)
         .message(message)
         .sound("Ping")
         .send()
         .is_ok()
+}
+
+/// Send a notification and block until the user clicks it.
+/// On click, activate the target app by bundle ID so macOS switches
+/// to the Space where the app lives.
+fn send_and_activate(title: &str, message: &str, bundle_id: &str) -> bool {
+    let result = mac_notification_sys::Notification::new()
+        .title(title)
+        .message(message)
+        .sound("Ping")
+        .wait_for_click(true)
+        .send();
+
+    match result {
+        Ok(NotificationResponse::Click) => {
+            activate_app(bundle_id);
+            true
+        }
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
+/// Activate an application by its bundle identifier.
+/// `open -b` brings the app to the foreground and switches Spaces.
+fn activate_app(bundle_id: &str) {
+    let _ = std::process::Command::new("open")
+        .arg("-b")
+        .arg(bundle_id)
+        .status();
 }
 
 pub fn handle_hook(input: &HookInput) -> Option<(&str, &str)> {
@@ -185,16 +225,16 @@ mod tests {
     fn send_notification_unfocusable_fallback() {
         // With bundle_id = None, sends with synthetic bundle ID.
         if cfg!(target_os = "macos") {
-            let result = send_notification("Test", "Hello from notclaude tests", None);
+            let result = send_notification("Test", "Hello from notclaude tests", None, false);
             assert!(result);
         }
     }
 
     #[test]
-    fn send_mac_notification_directly() {
+    fn send_fire_and_forget_directly() {
         if cfg!(target_os = "macos") {
             let _ = mac_notification_sys::set_application(UNFOCUSABLE_BUNDLE_ID);
-            assert!(send_mac_notification("Test", "unfocusable notification test"));
+            assert!(send_fire_and_forget("Test", "unfocusable notification test"));
         }
     }
 }

@@ -55,7 +55,33 @@ fn run_hook() {
 
     if let Some((title, message)) = notification::handle_hook(&input) {
         let bundle_id = process::find_parent_app_bundle_id();
-        notification::send_notification(title, message, bundle_id.as_deref());
+
+        // When we have a focusable app, fork so the parent returns
+        // immediately to Claude Code while the child waits for the
+        // notification click and then activates the target app
+        // (switching macOS Spaces).
+        let wait_and_activate = bundle_id.is_some() && daemonize();
+
+        notification::send_notification(title, message, bundle_id.as_deref(), wait_and_activate);
+    }
+}
+
+/// Fork and detach from the parent session. Returns `true` in the
+/// child (daemon), `false` if fork fails. The parent exits immediately.
+fn daemonize() -> bool {
+    unsafe {
+        match libc::fork() {
+            -1 => false, // fork failed — continue in-process
+            0 => {
+                // Child: new session so we're independent of the caller
+                libc::setsid();
+                // Safety net: kill the daemon after 5 minutes so a
+                // notification that is never clicked doesn't leak a process.
+                libc::alarm(300);
+                true
+            }
+            _ => std::process::exit(0), // parent exits
+        }
     }
 }
 
