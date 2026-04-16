@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.3] - 2026-04-16
+
+- fix: improve setup skill message
+
 ## [0.2.2] - 2026-04-16
 
 - fix: release using separate workflow
