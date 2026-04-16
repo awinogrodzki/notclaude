@@ -16,7 +16,7 @@ cargo install --path . # install to ~/.cargo/bin
 Single binary, three modules:
 
 - `src/notification.rs` — Hook handler: parses JSON from stdin, sends macOS notification via `osascript`. Handles `permission_prompt` and `idle_prompt` types.
-- `src/config.rs` — Reads/writes `.claude/settings.json`. Merges hook config without clobbering existing settings. Supports global (`~/.claude/`) and project (`./.claude/`) scopes.
+- `src/config.rs` — Reads/writes Claude Code settings files. Merges hook config without clobbering existing settings. Supports global (`~/.claude/settings.json`) and project (`.claude/settings.local.json`) scopes.
 - `src/main.rs` — CLI entry point using `clap` derive. Subcommands: `hook`, `install`, `uninstall`, `status`.
 
 ## Key design decisions

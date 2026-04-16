@@ -35,7 +35,7 @@ pub fn global_settings_path() -> Option<PathBuf> {
 }
 
 pub fn project_settings_path() -> PathBuf {
-    PathBuf::from(".claude").join("settings.json")
+    PathBuf::from(".claude").join("settings.local.json")
 }
 
 fn read_settings(path: &Path) -> Value {
@@ -152,7 +152,7 @@ mod tests {
     use std::fs;
 
     fn temp_settings(dir: &Path) -> PathBuf {
-        let path = dir.join(".claude").join("settings.json");
+        let path = dir.join(".claude").join("settings.local.json");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         path
     }

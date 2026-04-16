@@ -46,7 +46,7 @@ If cargo is not available, tell the user:
 
 Run: `<NOTCLAUDE_BIN> install --project`
 
-This adds notification hooks to `.claude/settings.json` in the current project.
+This adds notification hooks to `.claude/settings.local.json` in the current project.
 
 ## Step 4: Verify and report
 
