@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.4] - 2026-04-16
+
+- fix: use local claude settings in project scope
+
 ## [0.2.3] - 2026-04-16
 
 - fix: improve setup skill message
