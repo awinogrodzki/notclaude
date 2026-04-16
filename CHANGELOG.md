@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.5] - 2026-04-16
+
+- fix: improve permission handling
+
 ## [0.2.4] - 2026-04-16
 
 - fix: use local claude settings in project scope
