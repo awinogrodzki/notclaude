@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.7] - 2026-04-16
+
+- fix: correct navigation between spaces
+
 ## [0.2.6] - 2026-04-16
 
 - fix: switch to correct space
